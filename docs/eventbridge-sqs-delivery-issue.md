@@ -1,12 +1,13 @@
 EventBridge to SQS delivery broken in url-shortener monorepo (ap-southeast-1)
 2026-06-18, analytics-bff smoke test
 
-Status: open. Two of the four stacks are affected: url-shortener-redirect-bff listener
-queue stays at zero, url-shortener-analytics-bff clicks listener queue stays at zero.
-Both queues are wired to EventBridge rules on the shared bus and have correct resource
-policies. The bus archive reports only three historic events (from the very first
-MappingCreated smoke test on 2026-06-17), which suggests cross-rule delivery is
-silently failing for newer events.
+Status: resolved (2026-06-18). MappingCreated → redirect-bff was working
+throughout (zero queue depth = fast consumption, not missing delivery).
+ClickRecorded → analytics-bff failed because ClicksListenerQueue used
+KmsMasterKeyId: alias/aws/sqs, which EventBridge cannot target (AWS-managed
+key policy is not editable). Fix: remove KMS from analytics SQS queues
+(use SSE-SQS, same as redirect-bff) and await PutEvents in the redirect
+handler so Lambda does not freeze before publish completes.
 
 What has been verified
 

@@ -31,13 +31,14 @@ resources:
       Properties:
         QueueName: ${self:service}-${opt:stage}-clicks-listener-dlq
         MessageRetentionPeriod: 1209600 # 14 days
-        KmsMasterKeyId: alias/aws/sqs
+        # SSE-SQS (not KMS): EventBridge cannot target queues encrypted
+        # with alias/aws/sqs — the AWS-managed key policy is not editable.
 
     ClicksListenerQueue:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: ${self:service}-${opt:stage}-clicks-listener-queue
-        KmsMasterKeyId: alias/aws/sqs
+        # Match redirect-bff listener queue: SSE-SQS so EventBridge can deliver.
         # VisibilityTimeout must be >= Lambda timeout (listener is 60s).
         VisibilityTimeout: 120
         RedrivePolicy:

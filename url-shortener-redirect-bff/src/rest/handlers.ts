@@ -39,14 +39,7 @@ const err = (statusCode: number, code: string, message: string) =>
  * are stable for the lifetime of the mapping; the 60s TTL is a safety
  * floor for any future "tombstone" deletion flow.
  */
-export const redirect: APIGatewayProxyHandlerV2 = async (event, context) => {
-  // Allow the 302 to return immediately without waiting for the
-  // fire-and-forget PutEvents to drain. The SDK PutEvents request
-  // will continue in the background; in practice Lambda keeps the
-  // runtime alive long enough to complete it because the event loop
-  // has no other work pending.
-  context.callbackWaitsForEmptyEventLoop = false;
-
+export const redirect: APIGatewayProxyHandlerV2 = async (event) => {
   const code = (event.pathParameters?.code ?? "").trim();
   if (!code) return err(400, "bad_request", "code is required");
   if (!/^[a-zA-Z0-9_-]{1,32}$/.test(code)) {
@@ -76,19 +69,14 @@ export const redirect: APIGatewayProxyHandlerV2 = async (event, context) => {
     return err(500, "internal_error", "row missing longUrl");
   }
 
-  // Publish click analytics without blocking the redirect response.
-  void emitClickRecorded({
+  // Await PutEvents so the publish completes before Lambda freezes.
+  await emitClickRecorded({
     code,
     longUrl,
     ownerSub: item.ownerSub as string | undefined,
     sourceEventId: item.sourceEventId as string | undefined,
     userAgent: event.requestContext.http?.userAgent,
     ip: event.requestContext.http?.sourceIp,
-  }).catch((e) => {
-    console.error("redirect: click event publish failed", {
-      code,
-      error: String(e),
-    });
   });
 
   return {
