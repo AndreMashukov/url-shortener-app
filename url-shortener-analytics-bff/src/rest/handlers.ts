@@ -8,7 +8,10 @@ import type {
 // ─── shared module state ────────────────────────────────────────
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
-const TABLE_NAME = process.env.TABLE_NAME ?? "";
+const TABLE_NAME = process.env.TABLE_NAME;
+if (!TABLE_NAME) {
+  throw new Error("analytics: TABLE_NAME environment variable is required");
+}
 const DEFAULT_DAYS = 30;
 const MAX_DAYS = 90;
 
@@ -35,18 +38,14 @@ const err = (statusCode: number, code: string, message: string) =>
 /**
  * GET /analytics/{code}?days=30
  * Owner-only (Cognito JWT). Returns click analytics for the code:
- *   { code, ownerSub, total, last24h, days: [{date, count}, ...] }
+ *   { code, ownerSub, total, clicksTodayUtc, days: [{date, count}, ...] }
  *
  * Steps:
  *  1. Validate the JWT (authorizer already did; just read sub).
  *  2. Read the lifetime counter (pk=URL#<code>, sk=COUNT).
  *  3. Read each day rollup for the last N days
  *     (pk=URL#<code>, sk begins_with "DAY#<yyyymmdd>" within range).
- *  4. Sum last24h by reading raw click rows with sk within the last
- *     24h window, OR by summing the lifetime counter and bucketing
- *     the per-day counts. For now we just return the lifetime and
- *     per-day counts; last24h is computed from the per-day bucketing
- *     by including today's day count.
+ *  4. Return lifetime total, today's UTC-day bucket, and per-day rollups.
  */
 export const analytics: APIGatewayProxyHandlerV2 = async (event) => {
   const ownerSub = getOwnerSub(event);
@@ -77,29 +76,51 @@ export const analytics: APIGatewayProxyHandlerV2 = async (event) => {
   const startDayKey = `DAY#${formatDayKey(startDate)}`;
   const endDayKey = `DAY#${formatDayKey(today)}`;
 
-  // 1) Lifetime counter.
-  const counterRes = await ddb.send(
-    new GetCommand({
-      TableName: TABLE_NAME,
-      Key: { pk: `URL#${code}`, sk: "COUNT" },
-    }),
-  );
-  const total = (counterRes.Item?.count as number | undefined) ?? 0;
+  // 1) Lifetime counter (also carries ownerSub for authz).
+  let counterRes;
+  try {
+    counterRes = await ddb.send(
+      new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { pk: `URL#${code}`, sk: "COUNT" },
+      }),
+    );
+  } catch (e) {
+    console.error("analytics: get counter failed", { code, error: String(e) });
+    return err(500, "internal_error", "failed to read analytics");
+  }
+
+  if (!counterRes.Item) {
+    return err(404, "not_found", "no analytics for this code");
+  }
+
+  const rowOwnerSub = counterRes.Item.ownerSub as string | undefined;
+  if (!rowOwnerSub || rowOwnerSub !== ownerSub) {
+    return err(403, "forbidden", "not authorized for this code");
+  }
+
+  const total = (counterRes.Item.count as number | undefined) ?? 0;
 
   // 2) Per-day rollups (Query by pk, sk between start and end DAY keys).
-  const daysRes = await ddb.send(
-    new QueryCommand({
-      TableName: TABLE_NAME,
-      KeyConditionExpression:
-        "pk = :pk AND sk BETWEEN :start AND :end",
-      ExpressionAttributeValues: {
-        ":pk": `URL#${code}`,
-        ":start": startDayKey,
-        ":end": endDayKey,
-      },
-      ScanIndexForward: true,
-    }),
-  );
+  let daysRes;
+  try {
+    daysRes = await ddb.send(
+      new QueryCommand({
+        TableName: TABLE_NAME,
+        KeyConditionExpression:
+          "pk = :pk AND sk BETWEEN :start AND :end",
+        ExpressionAttributeValues: {
+          ":pk": `URL#${code}`,
+          ":start": startDayKey,
+          ":end": endDayKey,
+        },
+        ScanIndexForward: true,
+      }),
+    );
+  } catch (e) {
+    console.error("analytics: query day rollups failed", { code, error: String(e) });
+    return err(500, "internal_error", "failed to read analytics");
+  }
 
   // Build a map of day -> count (zero-fill missing days later).
   const dayCounts: Record<string, number> = {};
@@ -117,15 +138,15 @@ export const analytics: APIGatewayProxyHandlerV2 = async (event) => {
     out.push({ date: day, count: dayCounts[day] ?? 0 });
   }
 
-  // last24h = today's day count. (We don't store finer granularity.)
+  // clicksTodayUtc = today's UTC calendar-day bucket (not a rolling 24h window).
   const todayKey = formatDayKey(today);
-  const last24h = dayCounts[todayKey] ?? 0;
+  const clicksTodayUtc = dayCounts[todayKey] ?? 0;
 
   return json({
     code,
     ownerSub,
     total,
-    last24h,
+    clicksTodayUtc,
     days: out,
   });
 };

@@ -11,7 +11,10 @@ import type {
 const eb = new EventBridgeClient({});
 
 const SOURCE = "url-shortener.app";
-const BUS_NAME = process.env.BUS_NAME ?? "";
+const BUS_NAME = process.env.BUS_NAME;
+if (!BUS_NAME) {
+  throw new Error("Missing required environment variable: BUS_NAME");
+}
 
 /**
  * Trigger leg of the Trilateral API — sole producer of MappingCreated /

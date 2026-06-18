@@ -47,4 +47,4 @@ export interface UrlMappingEvent {
 }
 
 /** Mapping change kind emitted as `detail-type`. */
-export type MappingEventType = "MappingCreated" | "MappingUpdated" | "MappingDeleted";
+export type MappingEventType = "MappingCreated" | "MappingModified" | "MappingDeleted";

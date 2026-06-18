@@ -30,14 +30,7 @@
     "info": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "serverless info --stage dev --region ap-southeast-1",
-        "cwd": "url-shortener-event-hub"
-      }
-    },
-    "deploy": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "serverless deploy --stage dev --region ap-southeast-1",
+        "command": "serverless info --stage ${NX_STAGE:-dev} --region ${NX_REGION:-ap-southeast-1}",
         "cwd": "url-shortener-event-hub"
       }
     }

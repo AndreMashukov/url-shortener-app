@@ -66,13 +66,9 @@ async function processRecord(record: SQSRecord): Promise<void> {
   const longUrl = detail.longUrl as string | undefined;
 
   if (!code || !longUrl) {
-    // Malformed event — log and ack to drop it. Better than
-    // infinite retries on a poison pill.
-    log("error", "listener: missing code or longUrl in detail", {
-      messageId: record.messageId,
-      detailKeys: Object.keys(detail),
-    });
-    return;
+    throw new Error(
+      `listener: missing code or longUrl in detail (messageId=${record.messageId})`,
+    );
   }
 
   const time = (body.time as string) ?? new Date().toISOString();

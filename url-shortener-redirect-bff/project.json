@@ -14,21 +14,21 @@
     "package": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "serverless package --stage dev --region ap-southeast-1",
+        "command": "serverless package --stage ${NX_STAGE:-dev} --region ${NX_REGION:-ap-southeast-1}",
         "cwd": "url-shortener-redirect-bff"
       }
     },
     "info": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "serverless info --stage dev --region ap-southeast-1",
+        "command": "serverless info --stage ${NX_STAGE:-dev} --region ${NX_REGION:-ap-southeast-1}",
         "cwd": "url-shortener-redirect-bff"
       }
     },
     "deploy": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "serverless deploy --stage dev --region ap-southeast-1",
+        "command": "serverless deploy --stage ${NX_STAGE:-dev} --region ${NX_REGION:-ap-southeast-1}",
         "cwd": "url-shortener-redirect-bff"
       }
     }

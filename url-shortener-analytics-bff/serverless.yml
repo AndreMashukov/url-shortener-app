@@ -79,7 +79,7 @@ package:
 
 functions:
   # GET /analytics/{code}?days=30 — owner-only. Returns:
-  #   { code, ownerSub, total, last24h, days: [{date, count}] }
+  #   { code, ownerSub, total, clicksTodayUtc, days: [{date, count}] }
   # Authorization: requires `requestContext.authorizer.jwt.claims.sub`
   # in the API GW v2 event. Returns 401/403 as appropriate.
   analytics:

@@ -131,7 +131,6 @@ functions:
             - eventName: [INSERT, MODIFY]
             - eventName: [REMOVE]
           startingPosition: TRIM_HORIZON
-          maximumRetryAttempts: 3
           functionResponseType: ReportBatchItemFailures
     environment: ${file(serverless/config.yml):triggerEnvironment}
 

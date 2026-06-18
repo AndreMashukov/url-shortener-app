@@ -108,16 +108,18 @@ async function processRecord(record: SQSRecord): Promise<void> {
     new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { pk, sk: `DAY#${dayKey}` },
-      UpdateExpression: "ADD #c :one SET #day = :day, #code = :code",
+      UpdateExpression: "ADD #c :one SET #day = :day, #code = :code, #ownerSub = :ownerSub",
       ExpressionAttributeNames: {
         "#c": "count",
         "#day": "day",
         "#code": "code",
+        "#ownerSub": "ownerSub",
       },
       ExpressionAttributeValues: {
         ":one": 1,
         ":day": dayKey,
         ":code": code,
+        ":ownerSub": detail.ownerSub ?? null,
       },
     }),
   );
@@ -127,14 +129,16 @@ async function processRecord(record: SQSRecord): Promise<void> {
     new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { pk, sk: "COUNT" },
-      UpdateExpression: "ADD #c :one SET #code = :code",
+      UpdateExpression: "ADD #c :one SET #code = :code, #ownerSub = :ownerSub",
       ExpressionAttributeNames: {
         "#c": "count",
         "#code": "code",
+        "#ownerSub": "ownerSub",
       },
       ExpressionAttributeValues: {
         ":one": 1,
         ":code": code,
+        ":ownerSub": detail.ownerSub ?? null,
       },
     }),
   );

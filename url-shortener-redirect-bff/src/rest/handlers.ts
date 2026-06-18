@@ -76,16 +76,19 @@ export const redirect: APIGatewayProxyHandlerV2 = async (event, context) => {
     return err(500, "internal_error", "row missing longUrl");
   }
 
-  // TEMP DEBUG: await instead of void to confirm SDK reaches the bus.
-  // If events now appear, the issue was the fire-and-forget path
-  // being cancelled by the runtime.
-  await emitClickRecorded({
+  // Publish click analytics without blocking the redirect response.
+  void emitClickRecorded({
     code,
     longUrl,
     ownerSub: item.ownerSub as string | undefined,
     sourceEventId: item.sourceEventId as string | undefined,
     userAgent: event.requestContext.http?.userAgent,
     ip: event.requestContext.http?.sourceIp,
+  }).catch((e) => {
+    console.error("redirect: click event publish failed", {
+      code,
+      error: String(e),
+    });
   });
 
   return {
@@ -148,14 +151,12 @@ async function emitClickRecorded(detail: ClickDetail): Promise<void> {
       });
     }
   } catch (e) {
-    // TEMP DEBUG: re-throw to surface in CloudWatch
     console.error("emitClickRecorded: PutEvents threw", {
       code: detail.code,
       error: String(e),
       busName: BUS_NAME,
       source: EVENT_SOURCE,
     });
-    throw e;
   }
 }
 

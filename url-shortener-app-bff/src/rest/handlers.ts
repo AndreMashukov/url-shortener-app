@@ -17,7 +17,10 @@ import type { UrlMappingRow } from "../models/mapping";
 // ─── shared module state ────────────────────────────────────────
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
-const TABLE_NAME = process.env.TABLE_NAME ?? "";
+const TABLE_NAME = process.env.TABLE_NAME;
+if (!TABLE_NAME) {
+  throw new Error("Missing required environment variable: TABLE_NAME");
+}
 const DOMAIN = process.env.DOMAIN ?? "url-shortener.app";
 const SUBSYS = "url-shortener";
 
@@ -98,7 +101,8 @@ export const createMapping: APIGatewayProxyHandlerV2 = async (event) => {
         if (alias) return err(409, "conflict", "alias already in use");
         continue;
       }
-      throw e;
+      console.error("createMapping: put failed", { error: String(e) });
+      return err(500, "internal_error", "failed to create mapping");
     }
   }
   if (!code) return err(503, "unavailable", "could not allocate a unique code; please retry");
@@ -119,13 +123,19 @@ export const listMyUrls: APIGatewayProxyHandlerV2 = async (event) => {
   const sub = req.requestContext.authorizer?.jwt.claims.sub;
   if (!sub) return err(401, "unauthorized", "missing or invalid JWT");
 
-  const res = await ddb.send(new QueryCommand({
-    TableName: TABLE_NAME,
-    IndexName: "gsi1",
-    KeyConditionExpression: "ownerSub = :s",
-    ExpressionAttributeValues: { ":s": sub },
-    Limit: 100,
-  }));
+  let res;
+  try {
+    res = await ddb.send(new QueryCommand({
+      TableName: TABLE_NAME,
+      IndexName: "gsi1",
+      KeyConditionExpression: "ownerSub = :s",
+      ExpressionAttributeValues: { ":s": sub },
+      Limit: 100,
+    }));
+  } catch (e) {
+    console.error("listMyUrls: query failed", { sub, error: String(e) });
+    return err(500, "internal_error", "failed to list mappings");
+  }
   const items = (res.Items ?? []).map((item) => ({
     code: item.code,
     shortUrl: `https://${DOMAIN}/${item.code}`,
