@@ -1,4 +1,7 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import {
+  ConditionalCheckFailedException,
+  DynamoDBClient,
+} from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
   PutCommand,
@@ -9,7 +12,10 @@ import type { SQSBatchResponse, SQSEvent, SQSRecord } from "aws-lambda";
 // ─── shared module state ────────────────────────────────────────
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
-const TABLE_NAME = process.env.TABLE_NAME ?? "";
+const TABLE_NAME = process.env.TABLE_NAME;
+if (!TABLE_NAME) {
+  throw new Error("TABLE_NAME environment variable is required");
+}
 
 /**
  * SQS event handler — consumes `ClickRecorded` events from the bus
@@ -18,10 +24,9 @@ const TABLE_NAME = process.env.TABLE_NAME ?? "";
  *   2. A day rollup:       pk="URL#<code>", sk="DAY#<yyyymmdd>"   (ADD count :1)
  *   3. A lifetime counter: pk="URL#<code>", sk="COUNT"            (ADD count :1)
  *
- * Idempotency: the raw click row uses the unique eventId as part of sk,
- * so duplicate deliveries are absorbed (PutItem with same pk+sk is a
- * no-op). The counters will double-count on duplicate delivery, which
- * is acceptable for analytics at our volumes.
+ * Idempotency: the raw click row is written with attribute_not_exists
+ * on pk+sk. Duplicate SQS deliveries skip counter updates, so retries
+ * after partial success cannot double-count.
  */
 export const handle = async (event: SQSEvent): Promise<SQSBatchResponse> => {
   const failures: SQSBatchResponse["batchItemFailures"] = [];
@@ -78,31 +83,25 @@ async function processRecord(record: SQSRecord): Promise<void> {
     throw new Error("listener: ClickRecorded detail missing 'code' field");
   }
 
-  const occurredAt = detail.occurredAt ?? new Date().toISOString();
-  const dayKey = formatDayKey(new Date(occurredAt));
+  const occurredAt = resolveOccurredAt(detail.occurredAt);
+  const dayKey = formatDayKey(occurredAt);
   // Use the SQS messageId as the event id; it's globally unique and
   // ensures the raw click row's sk is unique even on retries.
   const eventId = record.messageId;
 
   const pk = `URL#${code}`;
+  const sk = `${occurredAt}#${eventId}`;
 
-  // 1) Raw click row (idempotent on (pk, sk) duplicate).
-  await ddb.send(
-    new PutCommand({
-      TableName: TABLE_NAME,
-      Item: {
-        pk,
-        sk: `${occurredAt}#${eventId}`,
-        code,
-        longUrl: detail.longUrl,
-        ownerSub: detail.ownerSub,
-        sourceEventId: detail.sourceEventId,
-        userAgent: detail.userAgent,
-        ip: detail.ip,
-        occurredAt,
-      },
-    }),
-  );
+  const inserted = await insertRawClickRow({
+    pk,
+    sk,
+    code,
+    occurredAt,
+    detail,
+  });
+  if (!inserted) {
+    return;
+  }
 
   // 2) Day rollup: ADD count :1.
   await ddb.send(
@@ -141,7 +140,59 @@ async function processRecord(record: SQSRecord): Promise<void> {
   );
 }
 
-function formatDayKey(d: Date): string {
+async function insertRawClickRow(input: {
+  pk: string;
+  sk: string;
+  code: string;
+  occurredAt: string;
+  detail: ClickDetail;
+}): Promise<boolean> {
+  try {
+    await ddb.send(
+      new PutCommand({
+        TableName: TABLE_NAME,
+        Item: {
+          pk: input.pk,
+          sk: input.sk,
+          code: input.code,
+          longUrl: input.detail.longUrl,
+          ownerSub: input.detail.ownerSub,
+          sourceEventId: input.detail.sourceEventId,
+          userAgent: input.detail.userAgent,
+          ip: input.detail.ip,
+          occurredAt: input.occurredAt,
+        },
+        ConditionExpression: "attribute_not_exists(pk) AND attribute_not_exists(sk)",
+      }),
+    );
+    return true;
+  } catch (e) {
+    if (e instanceof ConditionalCheckFailedException) {
+      return false;
+    }
+    throw e;
+  }
+}
+
+function resolveOccurredAt(value: string | undefined): string {
+  if (value === undefined || value === "") {
+    return new Date().toISOString();
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`listener: invalid occurredAt '${value}'`);
+  }
+
+  return parsed.toISOString();
+}
+
+function formatDayKey(isoTimestamp: string): string {
+  const d = new Date(isoTimestamp);
+  if (Number.isNaN(d.getTime())) {
+    throw new Error(`listener: cannot derive day key from '${isoTimestamp}'`);
+  }
+
   const y = d.getUTCFullYear().toString().padStart(4, "0");
   const m = (d.getUTCMonth() + 1).toString().padStart(2, "0");
   const day = d.getUTCDate().toString().padStart(2, "0");

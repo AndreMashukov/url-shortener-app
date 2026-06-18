@@ -82,19 +82,6 @@ resources:
               Arn:
                 Fn::GetAtt: [ClicksListenerDLQ, Arn]
 
-    # --- EventSourceMapping: SQS -> listener lambda ---
-    ListenerEventSourceMappingSQSClicksListenerQueue:
-      Type: AWS::Lambda::EventSourceMapping
-      Properties:
-        FunctionName:
-          Fn::GetAtt: [ListenerLambdaFunction, Arn]
-        EventSourceArn:
-          Fn::GetAtt: [ClicksListenerQueue, Arn]
-        BatchSize: 25
-        MaximumBatchingWindowInSeconds: 5
-        FunctionResponseTypes:
-          - ReportBatchItemFailures
-
   Outputs:
     ClicksTableName:
       Value:

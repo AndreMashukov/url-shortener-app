@@ -114,6 +114,7 @@ functions:
           arn:
             Fn::GetAtt: [ClicksListenerQueue, Arn]
           batchSize: 25
+          maximumBatchingWindow: 5
           functionResponseType: ReportBatchItemFailures
     environment: ${file(serverless/config.yml):listenerEnvironment}
 
