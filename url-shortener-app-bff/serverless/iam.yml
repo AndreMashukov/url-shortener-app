@@ -1,0 +1,4 @@
+role:
+  statements:
+    - ${file(serverless/dynamodb.yml):iamRoleStatements}
+    - ${file(serverless/bus.yml):iamRoleStatements}

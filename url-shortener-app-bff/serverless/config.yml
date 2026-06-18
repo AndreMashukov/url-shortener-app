@@ -1,0 +1,33 @@
+params:
+  dev:
+    debug: '*'
+    account: dev
+    logRetentionInDays: 3
+
+custom:
+  partition: aws
+  org: my
+  subsys: url-shortener
+  # Cross-stack ref to event-hub (deployed first). Only the busName is
+  # needed by the trigger lambda for PutEvents. The handler does NOT
+  # emit directly any more (single producer = trigger).
+  busName: ${cf:url-shortener-event-hub-${opt:stage}.busName}
+  busArn:  ${cf:url-shortener-event-hub-${opt:stage}.busArn}
+  # Cognito is defined in this stack; apig.yml references it via Fn::GetAtt
+  # (no ${cf:} — that's only for cross-stack).
+
+environment:
+  SERVICE: ${self:service}
+  STAGE: ${opt:stage}
+  AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+
+restEnvironment:
+  TABLE_NAME: ${self:service}-${opt:stage}-mappings
+  # The createMapping handler no longer calls PutEvents directly. The
+  # DDB stream + trigger lambda is the SOLE producer of MappingCreated.
+  DOMAIN: url-shortener.app
+
+triggerEnvironment:
+  TABLE_NAME: ${self:service}-${opt:stage}-mappings
+  BUS_NAME: ${self:custom.busName}
+  BUS_ARN: ${self:custom.busArn}

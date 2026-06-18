@@ -1,0 +1,121 @@
+# url-shortener-analytics-bff — Serverless Framework v4
+# Analytics BFF for the URL shortener. Consumes ClickRecorded events
+# emitted by url-shortener-redirect-bff's redirect lambda, and
+# materializes per-code click counters (lifetime + per-day rollups)
+# in its own DDB table.
+#
+# Architecture (2026-06-18):
+#   rest — GET /analytics/{code}?days=30 (Cognito JWT, owner-only),
+#          GET /health (public)
+#   listener — consumes ClickRecorded from bus -> ClicksListenerQueue;
+#              writes raw click row + day rollup + lifetime counter
+#
+# Single-table DDB design:
+#   pk = "URL#<code>", sk = "<ts>#<eventId>"  (raw click rows, dense)
+#   pk = "URL#<code>", sk = "DAY#<yyyymmdd>"  (per-day counter, sparse)
+#   pk = "URL#<code>", sk = "COUNT"           (lifetime counter)
+#
+# Inbound bulkhead: we do NOT read app-bff's mappings table or
+# redirect-bff's redirects table. ownerSub arrives in the ClickRecorded
+# detail (populated by redirect-bff from its lean row).
+#
+# Deploy order:
+#   1) url-shortener-event-hub
+#   2) url-shortener-app-bff
+#   3) url-shortener-redirect-bff
+#   4) url-shortener-analytics-bff (this stack)
+#
+# Stack outputs: ClicksTableName, ApiEndpoint, ListenerQueueUrl.
+
+service: ${self:custom.subsys}-analytics-bff
+
+frameworkVersion: ^4
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ap-southeast-1
+  stage: ${opt:stage, 'dev'}
+  endpointType: REGIONAL
+  logRetentionInDays: ${opt:logRetentionInDays, 3}
+  environment: ${file(serverless/config.yml):environment}
+  iam:
+    role: ${file(serverless/iam.yml):role}
+  httpApi:
+    cors: true
+    metrics: true
+    # Cognito JWT authorizer. We cross-reference the user pool from
+    # the app-bff stack via a CFN export; the issuer URL is built with
+    # the resolved pool ID. /health is public; /analytics/* requires JWT.
+    authorizers:
+      cognitoJwtAuthorizer:
+        type: jwt
+        identitySource: '$request.header.Authorization'
+        issuerUrl:
+          Fn::Sub: 'https://cognito-idp.${AWS::Region}.amazonaws.com/${self:custom.userPoolId}'
+        audience:
+          - ${self:custom.userPoolClientId}
+
+params: ${file(serverless/config.yml):params}
+custom: ${file(serverless/config.yml):custom}
+
+build:
+  esbuild:
+    bundle: true
+    minify: false
+    target: 'node20'
+    sourcemap:
+      type: linked
+      setNodeOptions: true
+    external:
+      - '@aws-sdk/*'
+
+package:
+  individually: true
+  patterns:
+    - '!node_modules/**'
+    - '!src/**'
+    - '!.git/**'
+
+functions:
+  # GET /analytics/{code}?days=30 — owner-only. Returns:
+  #   { code, ownerSub, total, clicksTodayUtc, days: [{date, count}] }
+  # Authorization: requires `requestContext.authorizer.jwt.claims.sub`
+  # in the API GW v2 event. Returns 401/403 as appropriate.
+  analytics:
+    handler: src/rest/handlers.analytics
+    memorySize: 256
+    timeout: 5
+    events:
+      - httpApi:
+          path: /analytics/{code}
+          method: get
+          authorizer: cognitoJwtAuthorizer
+    environment: ${file(serverless/config.yml):restEnvironment}
+
+  # GET /health — public.
+  health:
+    handler: src/rest/handlers.health
+    memorySize: 128
+    timeout: 5
+    events:
+      - httpApi:
+          path: /health
+          method: get
+    environment: ${file(serverless/config.yml):restEnvironment}
+
+  # Listener — consumes ClickRecorded from bus -> ClicksListenerQueue.
+  listener:
+    handler: src/listener.handle
+    memorySize: 256
+    timeout: 60
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [ClicksListenerQueue, Arn]
+          batchSize: 25
+          maximumBatchingWindow: 5
+          functionResponseType: ReportBatchItemFailures
+    environment: ${file(serverless/config.yml):listenerEnvironment}
+
+resources: ${file(serverless/resources.yml):resources}

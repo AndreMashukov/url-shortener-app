@@ -1,0 +1,15 @@
+# IAM for the listener lambda. EventBridge -> SQS is wired by the
+# queue policy (ClicksListenerQueuePolicy), not by this role — the
+# listener only needs SQS permissions to consume + delete.
+
+iamRoleStatements:
+  Effect: Allow
+  Action:
+    - sqs:ReceiveMessage
+    - sqs:DeleteMessage
+    - sqs:GetQueueAttributes
+    - sqs:GetQueueUrl
+    - sqs:ChangeMessageVisibility
+  Resource:
+    - Fn::GetAtt: [ClicksListenerQueue, Arn]
+    - Fn::GetAtt: [ClicksListenerDLQ, Arn]

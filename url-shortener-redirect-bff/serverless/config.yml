@@ -1,0 +1,31 @@
+params:
+  dev:
+    debug: '*'
+    account: dev
+    logRetentionInDays: 3
+
+custom:
+  partition: aws
+  org: my
+  subsys: url-shortener
+  # Cross-stack refs to event-hub (bus) and app-bff (mappings table).
+  busName: ${cf:url-shortener-event-hub-${opt:stage}.busName}
+  busArn:  ${cf:url-shortener-event-hub-${opt:stage}.busArn}
+  # We don't need the stream ARN (only the listener consumes from SQS),
+  # but we do need the mappings table name for cross-stack references
+  # in design / debug contexts. Not used in the handlers.
+  mappingsTableName: ${cf:url-shortener-app-bff-${opt:stage}.MappingsTableName}
+
+environment:
+  SERVICE: ${self:service}
+  STAGE: ${opt:stage}
+  AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+
+restEnvironment:
+  TABLE_NAME: ${self:service}-${opt:stage}-redirects
+  DOMAIN: url-shortener.app
+  BUS_NAME: ${self:custom.busName}
+  EVENT_SOURCE: url-shortener.redirect
+
+listenerEnvironment:
+  TABLE_NAME: ${self:service}-${opt:stage}-redirects

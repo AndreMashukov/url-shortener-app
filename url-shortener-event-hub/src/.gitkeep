@@ -1,0 +1,3 @@
+# The event-hub stack contains no business logic — only AWS::Events::EventBus
+# and AWS::Events::Archive resources. The other BFFs (app-bff, redirect-bff,
+# analytics-bff) publish to and consume from this bus.

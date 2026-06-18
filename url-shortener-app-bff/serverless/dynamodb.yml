@@ -1,0 +1,29 @@
+# Single-table design (book Ch. 5):
+#   pk = "<subsys>#MAPPING"  (HASH)
+#   sk = "<code>"            (RANGE)
+#   discriminator = "MAPPING" (S)
+# GSI1 enables GET /me/urls: pk1 = ownerSub, sk1 = code
+#
+# DDB stream (NEW_AND_OLD_IMAGES) feeds the trigger lambda, which is
+# the SOLE producer of MappingCreated events on the bus. See §13.
+
+tableArn:
+  Fn::GetAtt: [ MappingsTable, Arn ]
+tableStreamArn:
+  Fn::GetAtt: [ MappingsTable, StreamArn ]
+
+iamRoleStatements:
+  Effect: Allow
+  Action:
+    - dynamodb:Query
+    - dynamodb:GetItem
+    - dynamodb:UpdateItem
+    - dynamodb:PutItem
+    - dynamodb:DeleteItem
+  Resource:
+    - Fn::GetAtt: [ MappingsTable, Arn ]
+    - Fn::Join:
+        - '/'
+        - - Fn::GetAtt: [ MappingsTable, Arn ]
+          - index
+          - '*'

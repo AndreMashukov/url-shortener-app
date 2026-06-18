@@ -1,0 +1,137 @@
+# url-shortener-app-bff — Serverless Framework v4
+# Authoring API for the URL shortener (POST /shorten, GET /me/urls).
+# Cognito JWT-protected HTTP API + 3 rest functions + 1 trigger lambda.
+#
+# Architecture (2026-06-18, after spec update):
+#   rest (3 routes) — PUT /shorten, GET /me/urls, GET /health
+#   trigger — consumes DDB stream on MappingsTable, emits MappingCreated
+#             to the bus. This is the SOLE producer of MappingCreated.
+#
+#   The createMapping handler does NOT call PutEvents directly any more —
+#   the DDB stream + trigger is the single source of truth, so that
+#   downstream consumers (redirect-bff listener) get exactly one event
+#   per write even on retries. Direct emit from the handler would
+#   double-fan-out and corrupt the lean materialized view in redirect-bff.
+#
+#   Why a trigger and not direct emit:
+#     - redirect-bff now subscribes to MappingCreated to materialize its
+#       own lean view (single-row GetItem by code). See design-research.md
+#       §13 (current revision).
+#     - The trigger keeps the write path responsive: if the bus is
+#       degraded, the DDB write still succeeds and the trigger backfills
+#       when the bus recovers (DDB stream is durable, ordered per shard).
+#     - Failed-after-write compensations (rare) emit a MODIFY/REMOVE on
+#       the stream, giving downstream consumers the full audit trail.
+#
+#   NO listener leg on this stack: app-bff has no consumer of its own
+#   events. The sole listener is in redirect-bff.
+#
+# Deploy order: url-shortener-event-hub first, then this stack.
+#   sls deploy --stage dev --region ap-southeast-1
+#
+# Stack outputs: UserPoolId, UserPoolClientId, AuthorizerId,
+# MappingsTableName, MappingsTableStreamArn, ApiEndpoint.
+
+service: ${self:custom.subsys}-app-bff
+
+frameworkVersion: ^4
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ap-southeast-1
+  stage: ${opt:stage, 'dev'}
+  endpointType: REGIONAL
+  logRetentionInDays: ${opt:logRetentionInDays, 3}
+  environment: ${file(serverless/config.yml):environment}
+  iam:
+    role: ${file(serverless/iam.yml):role}
+  httpApi:
+    cors: true
+    metrics: true
+    authorizers:
+      cognitoJwtAuthorizer:
+        type: jwt
+        identitySource: '$request.header.Authorization'
+        issuerUrl:
+          Fn::Sub: 'https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}'
+        audience:
+          - Ref: UserPoolClient
+
+params: ${file(serverless/config.yml):params}
+custom: ${file(serverless/config.yml):custom}
+
+build:
+  esbuild:
+    bundle: true
+    minify: false
+    target: 'node20'
+    sourcemap:
+      type: linked
+      setNodeOptions: true
+    external:
+      - '@aws-sdk/*'
+
+package:
+  individually: true
+  patterns:
+    - '!node_modules/**'
+    - '!src/**'
+    - '!.git/**'
+
+functions:
+  # PUT /shorten — create a new short URL mapping. Cognito JWT required.
+  createMapping:
+    handler: src/rest/handlers.createMapping
+    memorySize: 256
+    timeout: 15
+    events:
+      - httpApi:
+          path: /shorten
+          method: put
+          authorizer: cognitoJwtAuthorizer
+    environment: ${file(serverless/config.yml):restEnvironment}
+
+  # GET /me/urls — list the caller's mappings via GSI1. Cognito JWT required.
+  listMyUrls:
+    handler: src/rest/handlers.listMyUrls
+    memorySize: 256
+    timeout: 15
+    events:
+      - httpApi:
+          path: /me/urls
+          method: get
+          authorizer: cognitoJwtAuthorizer
+    environment: ${file(serverless/config.yml):restEnvironment}
+
+  # GET /health — public health check. NO authorizer.
+  health:
+    handler: src/rest/handlers.health
+    memorySize: 128
+    timeout: 5
+    events:
+      - httpApi:
+          path: /health
+          method: get
+    environment: ${file(serverless/config.yml):restEnvironment}
+
+  # Trigger leg — consumes DDB stream on MappingsTable, emits MappingCreated
+  # to the bus. Sole producer of MappingCreated events.
+  # Wired via MappingsTableEventSourceMapping in resources.yml (NEW_AND_OLD_IMAGES).
+  trigger:
+    handler: src/trigger.handle
+    memorySize: 256
+    timeout: 60
+    events:
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt: [MappingsTable, StreamArn]
+          filterPatterns:
+            - eventName: [INSERT, MODIFY]
+            - eventName: [REMOVE]
+          startingPosition: TRIM_HORIZON
+          functionResponseType: ReportBatchItemFailures
+    environment: ${file(serverless/config.yml):triggerEnvironment}
+
+resources: ${file(serverless/resources.yml):resources}

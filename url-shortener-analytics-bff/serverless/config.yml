@@ -1,0 +1,32 @@
+params:
+  dev:
+    debug: '*'
+    account: dev
+    logRetentionInDays: 3
+
+custom:
+  partition: aws
+  org: my
+  subsys: url-shortener
+  # Cross-stack refs to event-hub (bus) and app-bff (Cognito user pool).
+  # We do NOT read app-bff's mappings table — that would violate the
+  # inbound bulkhead. We learn the ownerSub from the ClickRecorded detail
+  # (which redirect-bff populates from its lean row).
+  busName: ${cf:url-shortener-event-hub-${opt:stage}.busName}
+  busArn:  ${cf:url-shortener-event-hub-${opt:stage}.busArn}
+  userPoolId:   ${cf:url-shortener-app-bff-${opt:stage}.UserPoolId}
+  userPoolArn:  ${cf:url-shortener-app-bff-${opt:stage}.UserPoolArn}
+  userPoolClientId: ${cf:url-shortener-app-bff-${opt:stage}.UserPoolClientId}
+
+environment:
+  SERVICE: ${self:service}
+  STAGE: ${opt:stage}
+  AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+
+restEnvironment:
+  TABLE_NAME: ${self:service}-${opt:stage}-clicks
+  DOMAIN: url-shortener.app
+  USER_POOL_ID: ${self:custom.userPoolId}
+
+listenerEnvironment:
+  TABLE_NAME: ${self:service}-${opt:stage}-clicks
