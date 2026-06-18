@@ -1,0 +1,14 @@
+# IAM for the analytics DDB table. The shared role covers both the
+# rest lambda (Query/Scan for the API) and the listener (PutItem,
+# UpdateItem for the rollups and counters).
+
+iamRoleStatements:
+  Effect: Allow
+  Action:
+    - dynamodb:GetItem
+    - dynamodb:PutItem
+    - dynamodb:UpdateItem
+    - dynamodb:Query
+    - dynamodb:Scan
+  Resource:
+    - Fn::GetAtt: [ClicksTable, Arn]

@@ -1,0 +1,19 @@
+{
+  "name": "url-shortener-event-hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EventBridge bus for the url-shortener-app system. One shared bus; all four BFFs (app, redirect, analytics) publish and subscribe to it. Forked from jgilbert01/templates/template-event-hub.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "package": "serverless package",
+    "deploy": "serverless deploy",
+    "info": "serverless info",
+    "remove": "serverless remove",
+    "logs": "serverless logs -f"
+  },
+  "devDependencies": {
+    "serverless": "^4.0.0"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "url-shortener-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "URL Shortener App - AWS serverless, event-sourced, CQRS. Four CF stacks on one event bus. Architecture based on 'Software Architecture Patterns for Serverless' (Packt 2023, ISBN 9781800207035).",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "url-shortener-event-hub",
+    "url-shortener-app-bff",
+    "url-shortener-redirect-bff",
+    "url-shortener-analytics-bff",
+    "libs/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "nx": "NX_SKIP_NATIVE_FILE_CACHE=true nx",
+    "start": "NX_SKIP_NATIVE_FILE_CACHE=true nx run-many --target=serve",
+    "build": "NX_SKIP_NATIVE_FILE_CACHE=true nx run-many --target=build",
+    "test": "NX_SKIP_NATIVE_FILE_CACHE=true nx run-many --target=test",
+    "typecheck": "NX_SKIP_NATIVE_FILE_CACHE=true nx run-many --target=typecheck",
+    "package": "NX_SKIP_NATIVE_FILE_CACHE=true nx run-many --target=package",
+    "deploy": "NX_SKIP_NATIVE_FILE_CACHE=true nx run-many --target=deploy",
+    "info": "NX_SKIP_NATIVE_FILE_CACHE=true nx run-many --target=info",
+    "show:projects": "NX_SKIP_NATIVE_FILE_CACHE=true nx show projects",
+    "graph": "NX_SKIP_NATIVE_FILE_CACHE=true nx graph",
+    "package:event-hub": "NX_SKIP_NATIVE_FILE_CACHE=true nx run url-shortener-event-hub:package",
+    "deploy:event-hub": "NX_SKIP_NATIVE_FILE_CACHE=true nx run url-shortener-event-hub:deploy",
+    "package:app-bff": "NX_SKIP_NATIVE_FILE_CACHE=true nx run url-shortener-app-bff:package",
+    "deploy:app-bff": "NX_SKIP_NATIVE_FILE_CACHE=true nx run url-shortener-app-bff:deploy",
+    "package:redirect-bff": "NX_SKIP_NATIVE_FILE_CACHE=true nx run url-shortener-redirect-bff:package",
+    "deploy:redirect-bff": "NX_SKIP_NATIVE_FILE_CACHE=true nx run url-shortener-redirect-bff:deploy",
+    "package:analytics-bff": "NX_SKIP_NATIVE_FILE_CACHE=true nx run url-shortener-analytics-bff:package",
+    "deploy:analytics-bff": "NX_SKIP_NATIVE_FILE_CACHE=true nx run url-shortener-analytics-bff:deploy"
+  },
+  "devDependencies": {
+    "@nx/eslint": "22.6.5",
+    "@nx/eslint-plugin": "22.6.5",
+    "@nx/js": "22.6.5",
+    "@nx/workspace": "22.6.5",
+    "@types/node": "^20.0.0",
+    "eslint": "^9.8.0",
+    "jiti": "2.4.2",
+    "nx": "22.6.5",
+    "typescript": "~5.7.3"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "url-shortener-analytics-bff",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "url-shortener-analytics-bff/src",
+  "projectType": "application",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "url-shortener-analytics-bff",
+        "command": "tsc --noEmit -p tsconfig.json"
+      }
+    },
+    "package": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "url-shortener-analytics-bff",
+        "command": "sls package --stage dev --region ap-southeast-1"
+      }
+    },
+    "deploy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "url-shortener-analytics-bff",
+        "command": "sls deploy --stage dev --region ap-southeast-1"
+      }
+    },
+    "info": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "url-shortener-analytics-bff",
+        "command": "sls info --stage dev --region ap-southeast-1"
+      }
+    }
+  }
+}

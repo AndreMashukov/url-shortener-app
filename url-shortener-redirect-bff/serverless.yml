@@ -1,0 +1,104 @@
+# url-shortener-redirect-bff — Serverless Framework v4
+# Read path for the URL shortener. Public HTTP API that resolves
+# short codes to long URLs via a lean DDB view maintained by the
+# listener lambda.
+#
+# Architecture (2026-06-18):
+#   rest — GET /{code}, GET /health (no JWT, public, CloudFront-fronted)
+#   listener — consumes MappingCreated from the bus and upserts the
+#              lean RedirectsTable. This is the ONLY consumer of
+#              MappingCreated today.
+#
+# Why a separate lean table (not cross-region read from app-bff's
+# mappings table): the redirect path serves ~100x more traffic than
+# the write path. Pulling ownerSub/alias/discriminator columns off
+# app-bff's MappingsTable would force it to scale for redirect volume
+# even though redirect-bff only needs code + longUrl. See §13.
+#
+# Deploy order:
+#   1) url-shortener-event-hub
+#   2) url-shortener-app-bff
+#   3) url-shortener-redirect-bff (this stack)
+#
+# Stack outputs: RedirectsTableName, ApiEndpoint, ListenerQueueUrl.
+
+service: ${self:custom.subsys}-redirect-bff
+
+frameworkVersion: ^4
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ap-southeast-1
+  stage: ${opt:stage, 'dev'}
+  endpointType: REGIONAL
+  logRetentionInDays: ${opt:logRetentionInDays, 3}
+  environment: ${file(serverless/config.yml):environment}
+  iam:
+    role: ${file(serverless/iam.yml):role}
+  httpApi:
+    cors: true
+    metrics: true
+    # No authorizers: this BFF is entirely public.
+
+params: ${file(serverless/config.yml):params}
+custom: ${file(serverless/config.yml):custom}
+
+build:
+  esbuild:
+    bundle: true
+    minify: false
+    target: 'node20'
+    sourcemap:
+      type: linked
+      setNodeOptions: true
+    external:
+      - '@aws-sdk/*'
+
+package:
+  individually: true
+  patterns:
+    - '!node_modules/**'
+    - '!src/**'
+    - '!.git/**'
+
+functions:
+  # GET /{code} — resolve short code to long URL via lean DDB view.
+  # Returns 302 redirect to the long URL.
+  redirect:
+    handler: src/rest/handlers.redirect
+    memorySize: 256
+    timeout: 5
+    events:
+      - httpApi:
+          path: /{code}
+          method: get
+    environment: ${file(serverless/config.yml):restEnvironment}
+
+  # GET /health — public health check.
+  health:
+    handler: src/rest/handlers.health
+    memorySize: 128
+    timeout: 5
+    events:
+      - httpApi:
+          path: /health
+          method: get
+    environment: ${file(serverless/config.yml):restEnvironment}
+
+  # Listener — consumes MappingCreated from bus -> RedirectsListenerQueue,
+  # upserts the lean RedirectsTable row. Wired via the EventSourceMapping
+  # resource in resources.yml.
+  listener:
+    handler: src/listener.handle
+    memorySize: 256
+    timeout: 60
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [RedirectsListenerQueue, Arn]
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+    environment: ${file(serverless/config.yml):listenerEnvironment}
+
+resources: ${file(serverless/resources.yml):resources}

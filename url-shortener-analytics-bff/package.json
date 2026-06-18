@@ -1,0 +1,24 @@
+{
+  "name": "url-shortener-analytics-bff",
+  "version": "0.0.0",
+  "private": true,
+  "description": "URL shortener analytics BFF. Consumes ClickRecorded from the bus and materializes per-code click counters and per-day rollups in its own DDB table. Exposes owner-only GET /analytics/{code}.",
+  "type": "commonjs",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package": "sls package --stage dev --region ap-southeast-1",
+    "deploy": "sls deploy --stage dev --region ap-southeast-1",
+    "info": "sls info --stage dev --region ap-southeast-1"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.0",
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0"
+  }
+}

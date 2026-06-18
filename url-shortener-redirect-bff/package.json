@@ -1,0 +1,19 @@
+{
+  "name": "url-shortener-redirect-bff",
+  "version": "0.0.0",
+  "private": true,
+  "description": "URL shortener redirect API (GET /{code}). Public redirect resolver backed by a lean DDB view materialized via bus listener from app-bff's MappingCreated events.",
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^20.12.7",
+    "esbuild": "^0.21.5",
+    "serverless": "^4.0.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-eventbridge": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "@aws-sdk/util-dynamodb": "^3.600.0"
+  }
+}

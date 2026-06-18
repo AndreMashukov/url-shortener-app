@@ -1,0 +1,10 @@
+# IAM for the bus PutEvents call. Used by the `redirect` lambda to
+# emit `ClickRecorded` events to the bus on every 302. Fire-and-forget
+# best-effort — analytics-bff is the only consumer.
+
+iamRoleStatements:
+  Effect: Allow
+  Action:
+    - events:PutEvents
+  Resource:
+    - ${self:custom.busArn}

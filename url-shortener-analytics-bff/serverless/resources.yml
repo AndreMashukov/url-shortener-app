@@ -1,0 +1,109 @@
+resources:
+  Resources:
+    # --- DDB analytics table (single-table design) ---
+    # pk = "URL#<code>", sk = "<ts>#<eventId>"   (raw click rows)
+    # pk = "URL#<code>", sk = "DAY#<yyyymmdd>"   (per-day counter)
+    # pk = "URL#<code>", sk = "COUNT"            (lifetime counter)
+    #
+    # On-demand billing: analytics traffic is bursty and unpredictable.
+    # No streams: listener is the only writer (SQS -> lambda).
+    # No GSIs: all access is by pk (HASH).
+    ClicksTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      Properties:
+        TableName: ${self:service}-${opt:stage}-clicks
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+
+    # --- SQS queues ---
+    ClicksListenerDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${opt:stage}-clicks-listener-dlq
+        MessageRetentionPeriod: 1209600 # 14 days
+        KmsMasterKeyId: alias/aws/sqs
+
+    ClicksListenerQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${opt:stage}-clicks-listener-queue
+        KmsMasterKeyId: alias/aws/sqs
+        # VisibilityTimeout must be >= Lambda timeout (listener is 60s).
+        VisibilityTimeout: 120
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt: [ClicksListenerDLQ, Arn]
+          maxReceiveCount: 5
+
+    # Allow EventBridge (via the bus) to send messages to the queue.
+    ClicksListenerQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues:
+          - Ref: ClicksListenerQueue
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: events.amazonaws.com
+              Action: sqs:SendMessage
+              Resource:
+                Fn::GetAtt: [ClicksListenerQueue, Arn]
+              Condition:
+                ArnEquals:
+                  aws:SourceArn:
+                    Fn::GetAtt: [ClicksListenerRule, Arn]
+
+    # --- EventBridge rule: bus --(ClickRecorded)--> queue ---
+    ClicksListenerRule:
+      Type: AWS::Events::Rule
+      Properties:
+        EventBusName: ${self:custom.busName}
+        Name: ${self:service}-${opt:stage}-clicks-listener-rule
+        EventPattern:
+          source: ['url-shortener.redirect']
+          detail-type: ['ClickRecorded']
+        Targets:
+          - Id: clicks-listener-queue
+            Arn:
+              Fn::GetAtt: [ClicksListenerQueue, Arn]
+            DeadLetterConfig:
+              Arn:
+                Fn::GetAtt: [ClicksListenerDLQ, Arn]
+
+    # --- EventSourceMapping: SQS -> listener lambda ---
+    ListenerEventSourceMappingSQSClicksListenerQueue:
+      Type: AWS::Lambda::EventSourceMapping
+      Properties:
+        FunctionName:
+          Fn::GetAtt: [ListenerLambdaFunction, Arn]
+        EventSourceArn:
+          Fn::GetAtt: [ClicksListenerQueue, Arn]
+        BatchSize: 25
+        MaximumBatchingWindowInSeconds: 5
+        FunctionResponseTypes:
+          - ReportBatchItemFailures
+
+  Outputs:
+    ClicksTableName:
+      Value:
+        Ref: ClicksTable
+      Export:
+        Name: ${self:service}-${opt:stage}-ClicksTableName
+    ListenerQueueUrl:
+      Value:
+        Ref: ClicksListenerQueue
+    ApiEndpoint:
+      Value:
+        Fn::Sub: 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'

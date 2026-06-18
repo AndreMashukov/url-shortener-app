@@ -1,0 +1,11 @@
+# IAM for the Cognito JWT authorizer. The authorizer validates the
+# incoming JWT against the app-bff's user pool. We do NOT need to
+# fetch users; just verify the token.
+
+iamRoleStatements:
+  Effect: Allow
+  Action:
+    - cognito-idp:GetUser
+    - cognito-idp:GetUserPool
+  Resource:
+    - ${self:custom.userPoolArn}
